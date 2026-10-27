@@ -1,0 +1,105 @@
+|| String $current_user = null;
+   Json $tasks = [];
+|
+
+|| on POST:
+     if $req.body.action == "login" {
+         session.set("user", $req.body.user);
+         redirect("/");
+     }
+     if $req.body.action == "logout" {
+         session.clear();
+         redirect("/");
+     }
+     if $req.body.action == "add" {
+         String $u = session.get("user");
+         db.exec("INSERT INTO tasks (username, name, done) VALUES (?, ?, 0)", [$u, $req.body.task_name]);
+         redirect("/");
+     }
+     if $req.body.action == "toggle" {
+         db.exec("UPDATE tasks SET done = 1 - done WHERE id = ?", [$req.body.task_id]);
+         redirect("/");
+     }
+     if $req.body.action == "delete" {
+         db.exec("DELETE FROM tasks WHERE id = ?", [$req.body.task_id]);
+         redirect("/");
+     }
+ |
+
+|| on GET:
+     $current_user = session.get("user");
+     if $req.query.user != null {
+         $current_user = $req.query.user;
+     }
+ |
+
+|| Result $rows = null;
+   if $current_user != null {
+     $rows = db.all("SELECT id, username, name, done FROM tasks WHERE username = ? ORDER BY id ASC", [$current_user]);
+     if $rows.ok == true {
+         $tasks = $rows.value;
+     }
+   }
+|
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Sticks Tasks</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .task { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        .task form { margin: 0; }
+        .status-1 .task-text { text-decoration: line-through; color: gray; }
+    </style>
+</head>
+<body>
+
+|| if $current_user != null:
+    <h1>Tasks for $current_user</h1>
+    <form method="POST" action="/" style="display:inline;">
+        <input type="hidden" name="action" value="logout">
+        <button type="submit">Log Out / Switch User</button>
+    </form>
+    <hr>
+    <ul>
+||| else:
+    <h1>Login to Tasks</h1>
+    <form method="POST" action="/">
+        <input type="hidden" name="action" value="login">
+        <input type="text" name="user" placeholder="Enter username..." required autofocus>
+        <button type="submit">View Tasks</button>
+    </form>
+|
+
+|| for Json $t in $tasks:
+    <li class="task status-$t.done">
+        <span class="task-text" style="flex-grow: 1;">$t.name</span>
+        
+        <form method="POST" action="/" style="display:inline;">
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="task_id" value="$t.id">
+            <button type="submit">Toggle</button>
+        </form>
+
+        <form method="POST" action="/" style="display:inline;">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="task_id" value="$t.id">
+            <button type="submit" style="color: red;">X</button>
+        </form>
+    </li>
+|
+
+|| if $current_user != null:
+    </ul>
+    <hr>
+    <form method="POST" action="/" style="display: flex; gap: 0.5rem;">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="task_name" placeholder="New task..." required>
+        <button type="submit">Add</button>
+    </form>
+|
+
+</body>
+</html>

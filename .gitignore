@@ -1,0 +1,91 @@
+# ==========================================
+# Working Documents & Notes
+# ==========================================
+definition.md
+
+# ==========================================
+# Rust / Cargo
+# ==========================================
+# Generated build artifacts
+target/
+sticks/target/
+**/*.rs.bk
+*.bk
+
+# Cargo profiling / bench output
+cobertura.xml
+*.profraw
+
+# ==========================================
+# Databases & Persistent Storage
+# ==========================================
+# SQLite databases, journals, and WAL files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Demo app dynamic database file
+sticksdemo/data/app.db
+
+# ==========================================
+# Environment & Secrets
+# ==========================================
+.env
+.env~
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# ==========================================
+# Operating System Files
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ==========================================
+# IDEs and Code Editors
+# ==========================================
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains (IntelliJ, RustRover, etc.)
+.idea/
+*.iml
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+
+# ==========================================
+# Logs & Temporary Files
+# ==========================================
+*.log
+tmp/
+temp/
