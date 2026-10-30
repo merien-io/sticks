@@ -1,13 +1,28 @@
 mod apiaccess;
 mod dbaccess;
+mod scanner;
+mod parser;
+mod value;
+mod utils;
 mod interpreter;
 mod server;
 
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
+const VERSION_INFO: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (built: ",
+    env!("BUILD_TIMESTAMP"),
+    ")"
+);
+
 #[derive(Parser, Debug)]
-#[command(name = "sticks", version, about = "Put some sticks in your HTML.")]
+#[command(
+    name = "sticks",
+    version = VERSION_INFO,
+    about = "Put some sticks in your HTML."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -1,5 +1,8 @@
 use crate::dbaccess;
-use crate::interpreter::{parse, scan, Context, Node, Val};
+use crate::scanner::scan;
+use crate::parser::{parse, Node};
+use crate::value::Val;
+use crate::interpreter::Context;
 use axum::{
     body::Body,
     extract::{Request, State},

@@ -13,10 +13,8 @@
        
        // Sticks evaluates '<' safely here outside of strings
        if $first.age_seconds < 14400 {
-         String $raw_repo = $first.repo_json as String;
-         String $raw_commit = $first.commit_json as String;
-         $repo = $raw_repo as Json;
-         $commit = $raw_commit as Json;
+         $repo = $first.repo_json as Json;
+         $commit = $first.commit_json as Json;
 
          $cached = true;
          $source_label = "⚡ SQLite Cache (< 4 hours old)";

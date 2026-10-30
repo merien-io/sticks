@@ -1,283 +1,14 @@
 use crate::apiaccess;
 use crate::dbaccess;
+use crate::value::Val;
+use crate::utils::{split_args, split_once_outside_quotes};
 use rusqlite::Connection;
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Value};
 use std::ops::ControlFlow;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RawToken {
-    Text(String),
-    Block(String),
-}
-
-pub fn scan(input: &str) -> Result<Vec<RawToken>, String> {
-    let mut tokens = Vec::new();
-    let mut chars = input.char_indices().peekable();
-    let bytes = input.as_bytes();
-    let mut text_buf = String::new();
-
-    while let Some(&(i, ch)) = chars.peek() {
-        if ch == '|' && i + 1 < bytes.len() && bytes[i + 1] == b'|' {
-            if !text_buf.is_empty() {
-                tokens.push(RawToken::Text(std::mem::take(&mut text_buf)));
-            }
-            chars.next();
-            chars.next();
-
-            let mut block_buf = String::new();
-            let mut closed = false;
-            while let Some(&(_, c)) = chars.peek() {
-                if c == '|' {
-                    chars.next();
-                    closed = true;
-                    break;
-                } else {
-                    block_buf.push(c);
-                    chars.next();
-                }
-            }
-            if !closed {
-                return Err(format!("Unterminated block starting at byte index {i}"));
-            }
-            tokens.push(RawToken::Block(block_buf));
-        } else {
-            text_buf.push(ch);
-            chars.next();
-        }
-    }
-    if !text_buf.is_empty() {
-        tokens.push(RawToken::Text(text_buf));
-    }
-    Ok(tokens)
-}
-
-#[derive(Debug, Clone)]
-pub enum Node {
-    Text(String),
-    Print(String),
-    If {
-        cond: String,
-        body: String,
-        else_body: Option<String>,
-    },
-    For {
-        var: String,
-        iter: String,
-        body: String,
-        else_body: Option<String>,
-    },
-    Handler {
-        method: String,
-        stmts: String,
-    },
-    Statements(String),
-}
-
-pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Node>, String> {
-    let mut ast = Vec::new();
-    let mut i = 0;
-
-    while i < tokens.len() {
-        match &tokens[i] {
-            RawToken::Text(t) => ast.push(Node::Text(t.clone())),
-            RawToken::Block(b) => {
-                let trimmed = b.trim();
-                if trimmed.starts_with("if ") {
-                    let head_end = trimmed.find(':').ok_or("Expected ':' in 'if' block")?;
-                    let head = trimmed[3..head_end].trim();
-                    let body = &trimmed[head_end + 1..];
-
-                    let mut else_body = None;
-                    if i + 1 < tokens.len() {
-                        if let RawToken::Block(next_b) = &tokens[i + 1] {
-                            let nb_trim = next_b.trim();
-                            if nb_trim.starts_with("else:") {
-                                else_body = Some(nb_trim[5..].to_string());
-                                i += 1;
-                            }
-                        }
-                    }
-                    ast.push(Node::If {
-                        cond: head.to_string(),
-                        body: body.to_string(),
-                        else_body,
-                    });
-                } else if trimmed.starts_with("for ") {
-                    let head_end = trimmed.find(':').ok_or("Expected ':' in 'for' block")?;
-                    let head = trimmed[4..head_end].trim();
-                    let body = &trimmed[head_end + 1..];
-
-                    let parts: Vec<&str> = head.split_whitespace().collect();
-                    let (var, iter) = if parts.len() == 3 && parts[1] == "in" {
-                        (parts[0], parts[2])
-                    } else if parts.len() >= 4 && parts[2] == "in" {
-                        (parts[1], parts[3])
-                    } else {
-                        return Err(format!("Invalid for loop signature: '{head}'"));
-                    };
-
-                    let mut else_body = None;
-                    if i + 1 < tokens.len() {
-                        if let RawToken::Block(next_b) = &tokens[i + 1] {
-                            let nb_trim = next_b.trim();
-                            if nb_trim.starts_with("else:") {
-                                else_body = Some(nb_trim[5..].to_string());
-                                i += 1;
-                            }
-                        }
-                    }
-                    ast.push(Node::For {
-                        var: var.to_string(),
-                        iter: iter.to_string(),
-                        body: body.to_string(),
-                        else_body,
-                    });
-                } else if trimmed.starts_with("else:") {
-                    return Err("Orphan 'else:' block encountered".to_string());
-                } else if trimmed.starts_with("on ") {
-                    let head_end = trimmed.find(':').ok_or("Expected ':' in 'on' block")?;
-                    let method = trimmed[3..head_end].trim();
-                    let body_str = &trimmed[head_end + 1..];
-                    ast.push(Node::Handler {
-                        method: method.to_string(),
-                        stmts: body_str.to_string(),
-                    });
-                } else if trimmed.contains(';')
-                    || trimmed.starts_with("type ")
-                    || trimmed.starts_with("input ")
-                {
-                    ast.push(Node::Statements(trimmed.to_string()));
-                } else {
-                    ast.push(Node::Print(trimmed.to_string()));
-                }
-            }
-        }
-        i += 1;
-    }
-    Ok(ast)
-}
-
-#[derive(Clone, Debug)]
-pub enum Val {
-    Null,
-    String(String),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Json(Value),
-}
-
-impl PartialEq for Val {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Val::Null, Val::Null) => true,
-            (Val::Null, Val::Json(Value::Null)) | (Val::Json(Value::Null), Val::Null) => true,
-            (Val::Bool(a), Val::Bool(b)) => a == b,
-            (Val::Bool(a), Val::Json(Value::Bool(b))) | (Val::Json(Value::Bool(b)), Val::Bool(a)) => {
-                a == b
-            }
-            (Val::String(a), Val::String(b)) => a == b,
-            (Val::String(a), Val::Json(Value::String(b)))
-            | (Val::Json(Value::String(b)), Val::String(a)) => a == b,
-            (Val::Int(a), Val::Int(b)) => a == b,
-            (Val::Int(a), Val::Json(Value::Number(b)))
-            | (Val::Json(Value::Number(b)), Val::Int(a)) => {
-                b.as_i64().map_or(false, |val| val == *a)
-            }
-            (Val::Float(a), Val::Float(b)) => (a - b).abs() < f64::EPSILON,
-            (Val::Int(a), Val::Float(b)) | (Val::Float(b), Val::Int(a)) => (*a as f64 - b).abs() < f64::EPSILON,
-            (Val::Json(a), Val::Json(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl PartialOrd for Val {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let n1 = self.to_f64();
-        let n2 = other.to_f64();
-        if let (Some(a), Some(b)) = (n1, n2) {
-            return a.partial_cmp(&b);
-        }
-        None
-    }
-}
-
-impl Val {
-    pub fn to_f64(&self) -> Option<f64> {
-        match self {
-            Val::Int(i) => Some(*i as f64),
-            Val::Float(f) => Some(*f),
-            Val::Json(Value::Number(n)) => n.as_f64(),
-            _ => None,
-        }
-    }
-
-    pub fn is_truthy(&self) -> bool {
-        match self {
-            Val::Bool(b) => *b,
-            Val::Json(Value::Bool(b)) => *b,
-            Val::Int(i) => *i != 0,
-            Val::Json(Value::Number(n)) => n.as_i64().map_or(false, |i| i != 0),
-            Val::String(s) => !s.is_empty(),
-            Val::Json(Value::String(s)) => !s.is_empty(),
-            Val::Json(Value::Array(a)) => !a.is_empty(),
-            Val::Json(Value::Object(o)) => !o.is_empty(),
-            Val::Null | Val::Json(Value::Null) | Val::Float(_) => false,
-        }
-    }
-
-    pub fn to_plain_string(&self) -> String {
-        match self {
-            Val::Null => String::new(),
-            Val::String(s) => s.clone(),
-            Val::Int(i) => i.to_string(),
-            Val::Float(f) => f.to_string(),
-            Val::Bool(b) => b.to_string(),
-            Val::Json(j) => match j {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Null => String::new(),
-                _ => j.to_string(),
-            },
-        }
-    }
-
-    pub fn to_escaped_html(&self) -> String {
-        escape_html(&self.to_plain_string())
-    }
-
-    pub fn to_json_value(&self) -> Value {
-        match self {
-            Val::Null => Value::Null,
-            Val::String(s) => Value::String(s.clone()),
-            Val::Int(i) => Value::Number((*i).into()),
-            Val::Float(f) => Number::from_f64(*f).map(Value::Number).unwrap_or(Value::Null),
-            Val::Bool(b) => Value::Bool(*b),
-            Val::Json(j) => j.clone(),
-        }
-    }
-}
-
-pub fn escape_html(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for c in input.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
 
 pub struct Context {
     pub vars: HashMap<String, Val>,
@@ -399,7 +130,23 @@ impl Context {
                 }
             }
 
-            let (stmt, remainder) = match rest.find(';') {
+            let mut stmt_end = None;
+            let mut in_quotes = false;
+            let bytes = rest.as_bytes();
+            for i in 0..bytes.len() {
+                let c = bytes[i] as char;
+                if c == '"' {
+                    if i == 0 || bytes[i - 1] as char != '\\' {
+                        in_quotes = !in_quotes;
+                    }
+                }
+                if !in_quotes && c == ';' {
+                    stmt_end = Some(i);
+                    break;
+                }
+            }
+
+            let (stmt, remainder) = match stmt_end {
                 Some(idx) => (&rest[..idx], &rest[idx + 1..]),
                 None => (rest, ""),
             };
@@ -409,7 +156,7 @@ impl Context {
                 continue;
             }
 
-            if let Some((lhs, rhs)) = s.split_once('=') {
+            if let Some((lhs, rhs)) = split_once_outside_quotes(s, "=") {
                 let lhs = lhs.trim();
                 let var_name = lhs.split_whitespace().last().unwrap_or(lhs);
                 if var_name.starts_with('$') {
@@ -462,7 +209,7 @@ impl Context {
             return Val::Int(length as i64);
         }
 
-        if let Some((lhs, rhs)) = expr.split_once(" as ") {
+        if let Some((lhs, rhs)) = split_once_outside_quotes(expr, " as ") {
             let val = self.eval_expr(lhs);
             let target_type = rhs.trim();
             return match target_type {
@@ -582,23 +329,39 @@ impl Context {
             return Val::Bool(!v.is_truthy());
         }
 
+        if let Some((left, right)) = split_once_outside_quotes(expr, " or ") {
+            let l_val = self.eval_expr(left);
+            if l_val.is_truthy() {
+                return Val::Bool(true);
+            }
+            return Val::Bool(self.eval_expr(right).is_truthy());
+        }
+
+        if let Some((left, right)) = split_once_outside_quotes(expr, " and ") {
+            let l_val = self.eval_expr(left);
+            if !l_val.is_truthy() {
+                return Val::Bool(false);
+            }
+            return Val::Bool(self.eval_expr(right).is_truthy());
+        }
+
         // Relational comparisons
-        if let Some((left, right)) = expr.split_once(" == ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " == ") {
             return Val::Bool(self.eval_expr(left) == self.eval_expr(right));
         }
-        if let Some((left, right)) = expr.split_once(" != ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " != ") {
             return Val::Bool(self.eval_expr(left) != self.eval_expr(right));
         }
-        if let Some((left, right)) = expr.split_once(" >= ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " >= ") {
             return Val::Bool(self.eval_expr(left) >= self.eval_expr(right));
         }
-        if let Some((left, right)) = expr.split_once(" <= ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " <= ") {
             return Val::Bool(self.eval_expr(left) <= self.eval_expr(right));
         }
-        if let Some((left, right)) = expr.split_once(" > ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " > ") {
             return Val::Bool(self.eval_expr(left) > self.eval_expr(right));
         }
-        if let Some((left, right)) = expr.split_once(" < ") {
+        if let Some((left, right)) = split_once_outside_quotes(expr, " < ") {
             return Val::Bool(self.eval_expr(left) < self.eval_expr(right));
         }
 
@@ -629,7 +392,25 @@ impl Context {
                 } else {
                     vec![]
                 };
-                let _ = dbaccess::execute_sql(&self.db, &sql, &params);
+                
+                let mut map = Map::new();
+                match dbaccess::execute_sql(&self.db, &sql, &params) {
+                    Ok(changes) => {
+                        map.insert("ok".to_string(), Value::Bool(true));
+                        let mut val = Map::new();
+                        val.insert("changes".to_string(), Value::Number(changes.into()));
+                        map.insert("value".to_string(), Value::Object(val));
+                        map.insert("error".to_string(), Value::Null);
+                    }
+                    Err(e) => {
+                        map.insert("ok".to_string(), Value::Bool(false));
+                        map.insert("value".to_string(), Value::Null);
+                        let mut err = Map::new();
+                        err.insert("message".to_string(), Value::String(e));
+                        map.insert("error".to_string(), Value::Object(err));
+                    }
+                }
+                return Val::Json(Value::Object(map));
             }
             return Val::Null;
         }
@@ -653,7 +434,7 @@ impl Context {
             let mut map = Map::new();
             if !body.is_empty() {
                 for pair in split_args(body) {
-                    if let Some((k, v)) = pair.split_once(':') {
+                    if let Some((k, v)) = split_once_outside_quotes(&pair, ":") {
                         let k = k.trim().trim_matches('"');
                         let val = self.eval_expr(v);
                         map.insert(k.to_string(), val.to_json_value());
@@ -756,7 +537,7 @@ impl Context {
         out
     }
 
-pub fn interpolate(&mut self, text: &str) -> String {
+    pub fn interpolate(&mut self, text: &str) -> String {
         let mut out = String::new();
         let mut chars = text.char_indices().peekable();
         while let Some(&(_, ch)) = chars.peek() {
@@ -848,37 +629,4 @@ pub fn interpolate(&mut self, text: &str) -> String {
         }
         out
     }
-}  
-
-pub fn split_args(input: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut curr = String::new();
-    let mut depth: usize = 0;
-    let mut in_q = false;
-    let mut prev = ' ';
-    for c in input.chars() {
-        if c == '"' && prev != '\\' {
-            in_q = !in_q;
-        }
-        if !in_q {
-            if c == '[' || c == '(' || c == '{' {
-                depth += 1;
-            }
-            if c == ']' || c == ')' || c == '}' {
-                depth = depth.saturating_sub(1);
-            }
-            if c == ',' && depth == 0 {
-                args.push(curr.trim().to_string());
-                curr.clear();
-                prev = c;
-                continue;
-            }
-        }
-        curr.push(c);
-        prev = c;
-    }
-    if !curr.trim().is_empty() {
-        args.push(curr.trim().to_string());
-    }
-    args
 }

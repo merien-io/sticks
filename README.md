@@ -2,6 +2,8 @@
 
 > *Put some sticks in your HTML.*
 
+**Website:** [https://sticksproject.org/](https://sticksproject.org/)
+
 Sticks is an opinionated, zero-build, server-rendered web platform packaged as a single static Rust binary. It offers the drop-in file-routing simplicity of classic PHP combined with modern type safety, structural injection immunity, and native response streaming.
 
 Templates are standard `.html` files enhanced with a minimal delimiter model: `||` opens a block and `|` closes it.
