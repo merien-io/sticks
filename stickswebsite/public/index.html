@@ -1,0 +1,330 @@
+|| Json $repo = null;
+   Json $commit = null;
+   Bool $cached = false;
+   String $source_label = "🌐 Live from GitHub API";
+
+   // Notice: No '>' operator inside the SQL string!
+   Result $cq = db.all("SELECT repo_json, commit_json, (unixepoch() - updated_at) AS age_seconds FROM github_cache WHERE id = 1", []);
+
+   if $cq.ok == true {
+     Json $rows = $cq.value;
+     if len($rows) > 0 {
+       Json $first = $rows[0];
+       
+       // Sticks evaluates '<' safely here outside of strings
+       if $first.age_seconds < 14400 {
+         String $raw_repo = $first.repo_json as String;
+         String $raw_commit = $first.commit_json as String;
+         $repo = $raw_repo as Json;
+         $commit = $raw_commit as Json;
+
+         $cached = true;
+         $source_label = "⚡ SQLite Cache (< 4 hours old)";
+       }
+     }
+   }
+
+   // Only fetch from GitHub if SQLite returned null or was older than 4 hours
+   if $repo == null {
+     Result $r_res = http.get("https://api.github.com/repos/merien-io/sticks", {
+       headers: { "User-Agent": "sticks-website" }
+     });
+     Result $c_res = http.get("https://api.github.com/repos/merien-io/sticks/commits?per_page=1", {
+       headers: { "User-Agent": "sticks-website" }
+     });
+
+     if $r_res.ok == true {
+       $repo = $r_res.value;
+       if $c_res.ok == true {
+         $commit = $c_res.value[0];
+       }
+
+       db.exec("INSERT OR REPLACE INTO github_cache (id, repo_json, commit_json, updated_at) VALUES (1, ?, ?, unixepoch())", [$repo, $commit]);
+     }
+   }
+|
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Favicons & Mobile Icons -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/android-chrome-192x192.png">
+
+  <!-- Primary Meta Tags -->
+  <title>Sticks — Burn the bundler.</title>
+  <meta name="title" content="Sticks — Burn the bundler.">
+  <meta name="description" content="An opinionated, zero-build, server-rendered web platform packaged as a single static Rust binary. Classic PHP simplicity meets modern type safety and native streaming.">
+  <meta name="author" content="merien-io">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://sticksproject.org/">
+  <meta name="theme-color" content="#04777e">
+
+  <!-- Open Graph / Facebook / Discord / LinkedIn -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sticksproject.org/">
+  <meta property="og:site_name" content="Sticks">
+  <meta property="og:title" content="Sticks — Burn the bundler.">
+  <meta property="og:description" content="An opinionated, zero-build, server-rendered web platform packaged as a single static Rust binary. Put some sticks in your HTML.">
+  <meta property="og:image" content="https://sticksproject.org/static/sticks_logo.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="758">
+  <meta property="og:image:height" content="256">
+  <meta property="og:image:alt" content="Sticks Logo — || sticks |">
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://sticksproject.org/">
+  <meta name="twitter:title" content="Sticks — Burn the bundler.">
+  <meta name="twitter:description" content="An opinionated, zero-build, server-rendered web platform packaged as a single static Rust binary. Put some sticks in your HTML.">
+  <meta name="twitter:image" content="https://sticksproject.org/static/sticks_logo.png">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: '#04777e',
+            accent: '#2dd4bf',
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-950 text-gray-300 font-sans antialiased selection:bg-accent selection:text-gray-950 pb-20">
+
+  <!-- HERO SECTION -->
+  <main class="max-w-5xl mx-auto px-6 pt-24 pb-16 text-center">
+    <img src="/static/logo.svg" alt="Sticks Logo" class="w-full max-w-md mx-auto mb-10 drop-shadow-[0_0_35px_rgba(45,212,191,0.2)]">
+    
+    <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 text-white">
+      Burn the bundler.<br/>
+      <span class="bg-gradient-to-r from-accent to-emerald-400 bg-clip-text text-transparent">Drop in the binary.</span>
+    </h1>
+    
+    <p class="text-xl md:text-2xl text-gray-400 font-light mb-12 max-w-3xl mx-auto leading-relaxed">
+      Modern web development is a landfill of transpilers, JSON glue APIs, and transitive dependencies. 
+      <strong class="text-gray-100 font-semibold">Sticks</strong> is an opinionated, zero-build, server-rendered web platform packaged as a single static Rust binary.
+    </p>
+
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="https://github.com/merien-io/sticks" class="w-full sm:w-auto bg-accent hover:bg-teal-300 text-gray-950 font-bold px-8 py-4 rounded-xl transition-all hover:-translate-y-1 shadow-[0_0_20px_rgba(45,212,191,0.3)]">
+        Read the Manifesto on GitHub
+      </a>
+      <a href="#syntax" class="w-full sm:w-auto bg-gray-900 border border-gray-800 hover:border-gray-600 text-white font-semibold px-8 py-4 rounded-xl transition-all">
+        See the Syntax &darr;
+      </a>
+    </div>
+  </main>
+
+  <!-- PHILOSOPHY GRID -->
+  <section class="max-w-6xl mx-auto px-6 py-16">
+    <div class="grid md:grid-cols-3 gap-6">
+      
+      <div class="bg-gray-900/50 border border-gray-800 p-8 rounded-2xl backdrop-blur-sm">
+        <div class="text-accent mb-4">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">Strict Execution Zones</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Execution flows strictly top-to-bottom. Mutations and redirects live in the <span class="text-gray-200">Effect Zone</span>. Once the first byte of HTML is streamed, you are in the <span class="text-gray-200">View Zone</span>. Side effects are structurally forbidden.
+        </p>
+      </div>
+
+      <div class="bg-gray-900/50 border border-gray-800 p-8 rounded-2xl backdrop-blur-sm">
+        <div class="text-accent mb-4">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">Injection is Impossible</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          SQL queries must be string literals. No dynamic concatenation allowed. Output is escaped by default according to its type. Template re-scanning is impossible. Data is inert.
+        </p>
+      </div>
+
+      <div class="bg-gray-900/50 border border-gray-800 p-8 rounded-2xl backdrop-blur-sm">
+        <div class="text-accent mb-4">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">Rule S4: No Nesting</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Blocks cannot nest inside other blocks. Deep UI branching is solved cleanly via sibling blocks, component composition, or client-side CSS state projection. Deal with it.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- SYNTAX & ALPINE INTEGRATION -->
+  <section id="syntax" class="max-w-6xl mx-auto px-6 py-16">
+    <div class="grid lg:grid-cols-2 gap-12 items-center">
+      
+      <!-- Text side -->
+      <div>
+        <h2 class="text-3xl font-bold text-white mb-6">Drop-in simplicity. <br/><span class="text-accent">Zero parsing conflicts.</span></h2>
+        <p class="text-gray-400 mb-6 leading-relaxed">
+          The runtime engine never parses your HTML. It scans for <code>&vert;&vert;</code> and <code>&vert;</code>, and ignores absolutely everything else. 
+        </p>
+        <p class="text-gray-400 mb-8 leading-relaxed">
+          Because of this, you can drop any client-side framework (like Alpine.js or Tailwind) straight into your code. No escaping curly braces. No delimiter collisions. If you need a literal `$` inside a Sticks block, just write `$$`.
+        </p>
+
+        <!-- Alpine Interactive Demo -->
+        <div class="p-6 border border-gray-800 rounded-xl bg-gray-900/30" x-data="{ count: 0, hover: false }">
+          <h4 class="text-white font-semibold mb-2 flex items-center gap-2">
+            <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+            Live Alpine.js Demo
+          </h4>
+          <p class="text-sm text-gray-500 mb-4">This counter runs purely on the client side via Alpine, living peacefully right next to Sticks code.</p>
+          
+          <button 
+            @click="count++" 
+            @mouseenter="hover = true" 
+            @mouseleave="hover = false"
+            class="px-4 py-2 rounded bg-gray-800 text-white font-mono text-sm border border-gray-700 transition-colors"
+            :class="hover ? 'border-accent text-accent' : ''">
+            x-text="count" &rarr; <span x-text="count" class="font-bold text-lg ml-2"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Code side -->
+      <div class="relative group" x-data="{ copied: false }">
+        <div class="absolute -inset-1 bg-gradient-to-r from-accent to-brand rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+        <div class="relative bg-[#0d1117] border border-gray-800 rounded-2xl p-6 shadow-2xl">
+          
+          <!-- Copy Button -->
+          <button @click="navigator.clipboard.writeText($refs.code.innerText); copied = true; setTimeout(() => copied = false, 2000)" class="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">
+            <svg x-show="!copied" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            <span x-show="copied" x-cloak class="text-accent text-sm font-bold">Copied!</span>
+          </button>
+
+          <pre x-ref="code" class="font-mono text-sm overflow-x-auto text-gray-300 leading-loose">
+<span class="text-gray-500">// 1. Effect Zone: Types, State, SQL</span>
+<span class="text-accent">&vert;&vert;</span> type User { String name; }
+   Result $res = db.all(<span class="text-green-400">"SELECT * FROM users"</span>, []);
+   List&lt;User&gt; $users = $res.value as List&lt;User&gt;;
+<span class="text-accent">&vert;</span>
+
+<span class="text-gray-500">&lt;!-- 2. View Zone: Read-only streaming --&gt;</span>
+&lt;h1 class=<span class="text-green-400">"text-2xl"</span>&gt;Registered Users&lt;/h1&gt;
+
+&lt;ul&gt;
+  <span class="text-accent">&vert;&vert;</span> <span class="text-purple-400">for</span> User $u <span class="text-purple-400">in</span> $users:
+    &lt;li&gt;<span class="text-blue-300">$u.name</span>&lt;/li&gt;
+  <span class="text-accent">&vert;&vert;&vert;</span> <span class="text-purple-400">else</span>:
+    &lt;li&gt;No users found.&lt;/li&gt;
+  <span class="text-accent">&vert;</span>
+&lt;/ul&gt;
+</pre>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+<!-- GITHUB PULSE -->
+  || if $repo != null:
+    <section class="max-w-4xl mx-auto px-6 mt-20 pt-16 border-t border-gray-900">
+      <div class="flex flex-col sm:flex-row items-center justify-between mb-8">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
+          Repository Pulse
+        </h2>
+        <span class="text-xs font-mono px-3 py-1 rounded-full bg-accent/10 text-accent border border-accent/20">
+          $source_label
+        </span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div class="text-3xl font-bold text-white font-mono">$repo.stargazers_count</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wider mt-1">Stars</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div class="text-3xl font-bold text-white font-mono">$repo.forks_count</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wider mt-1">Forks</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div class="text-3xl font-bold text-white font-mono">$repo.open_issues_count</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wider mt-1">Issues</div>
+        </div>
+      </div>
+  |
+
+  <!-- Sibling Block 2: Commit Box (Root-level, never nested) -->
+  || if $commit != null:
+    <div class="bg-gray-900/50 border-l-2 border-accent p-4 rounded-r-lg text-sm text-gray-400 font-mono">
+      <span class="text-gray-200 font-bold">$commit.commit.author.name</span> pushed to main 
+      <span class="text-gray-500">($commit.sha)</span><br/>
+      <span class="text-white mt-1 block">"$commit.commit.message"</span>
+    </div>
+  |
+
+  <!-- Sibling Block 3: Close the section container -->
+  || if $repo != null:
+    </section>
+  |
+<!-- FOOTER -->
+  <footer class="mt-32 border-t border-gray-900 bg-gray-950/80 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-6 py-12">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+        
+        <!-- Brand & Badge Col -->
+        <div class="md:col-span-2">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="font-mono text-accent font-bold text-xl">&vert;&vert; sticks &vert;</span>
+          </div>
+          <p class="text-sm text-gray-400 mb-4 max-w-sm leading-relaxed">
+            A zero-build, server-rendered web platform packaged as a single static Rust binary. Zero npm modules. No bundler config.
+          </p>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-900 border border-gray-800 text-xs font-mono text-gray-300">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            Proudly rendered with Sticks
+          </div>
+        </div>
+
+        <!-- Links Col -->
+        <div>
+          <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4 font-mono">Resources</h4>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li><a href="https://github.com/merien-io/sticks" target="_blank" class="hover:text-accent transition-colors">GitHub Repository</a></li>
+            <li><a href="https://github.com/merien-io/sticks#quickstart" target="_blank" class="hover:text-accent transition-colors">Documentation</a></li>
+            <li><a href="https://github.com/merien-io/sticks/issues" target="_blank" class="hover:text-accent transition-colors">Issue Tracker</a></li>
+          </ul>
+        </div>
+
+        <!-- Architecture Col -->
+        <div>
+          <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4 font-mono">Philosophy</h4>
+          <ul class="space-y-2 text-sm text-gray-400">
+            <li><span class="text-gray-500">&bull;</span> Rule S4: No Nesting</li>
+            <li><span class="text-gray-500">&bull;</span> Two Strict Zones</li>
+            <li><span class="text-gray-500">&bull;</span> Parameterized SQL Only</li>
+            <li><span class="text-gray-500">&bull;</span> Single Rust Binary</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- Bottom Bar: License & Copyright -->
+      <div class="pt-8 border-t border-gray-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500 font-mono">
+        <p>&copy; 2026 merien-io. Released under the <a href="https://opensource.org/licenses/MIT" target="_blank" class="text-gray-400 hover:text-accent underline">MIT License</a>.</p>
+        <p>HTML untouched. Delimiters respected.</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,45 +1,68 @@
 # ==========================================
-# Working Documents & Notes
+# Working Documents, Notes & Design Specs
 # ==========================================
 definitions.md
+*.draft
+*.todo
+*.scratch
 
 # ==========================================
 # Rust / Cargo
 # ==========================================
 # Generated build artifacts
 target/
-sticks/target/
+**/target/
 **/*.rs.bk
 *.bk
 
-# Cargo profiling / bench output
+# Local Cargo configuration & credentials (often hold private tokens)
+.cargo/config.toml
+.cargo/credentials.toml
+
+# Cargo profiling / bench / coverage output
 cobertura.xml
 *.profraw
+*.profdata
+*.gcda
+*.gcno
 
 # ==========================================
-# Databases & Persistent Storage
+# Databases, WAL Files & Storage
 # ==========================================
-# SQLite databases, journals, and WAL files
+# SQLite databases, journals, WAL, SHM, and backups (any subdirectory)
 *.db
-*.db-journal
-*.db-wal
-*.db-shm
+*.db-*
+*.db.bak
 *.sqlite
 *.sqlite3
+*.sqlite3-*
+*.sqlite.bak
+*.sql.dump
 
-# Demo app dynamic database file
-sticksdemo/data/app.db
+# Explicit project runtime data directories
+sticksdemo/data/*.db*
+stickswebsite/data/*.db*
+**/data/*.db*
+
+# Keep schema files tracked even if inside data/
+!**/data/*.sql
 
 # ==========================================
-# Environment & Secrets
+# Environment, Secrets & Credentials
 # ==========================================
 .env
 .env~
 .env.*
+.envrc
 !.env.example
 *.pem
 *.key
 *.crt
+*.pfx
+*.p12
+*.cer
+*.pub.key
+*.secret
 
 # ==========================================
 # Operating System Files
@@ -72,20 +95,23 @@ $RECYCLE.BIN/
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# JetBrains (IntelliJ, RustRover, etc.)
+# JetBrains (IntelliJ, RustRover, CLion, etc.)
 .idea/
 *.iml
 
-# Vim / Emacs
+# Vim / Emacs / Sublime
 *.swp
 *.swo
 *~
 \#*\#
 .\#*
+*.sublime-project
+*.sublime-workspace
 
 # ==========================================
-# Logs & Temporary Files
+# Logs, Temp Files & Test Dumps
 # ==========================================
 *.log
+logs/
 tmp/
 temp/

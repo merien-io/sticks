@@ -1,0 +1,23 @@
+[daemon]
+interface = "0.0.0.0"
+port      = 3001
+
+[[site]]
+hostname       = "sticksproject.org"
+public_dir     = "./public"
+ignore         = ["*.secret", "private/*"]
+
+  [site.database]
+  driver = "sqlite"
+  path   = "./data/app.db"
+
+  [site.http]
+  allow_hosts   = ["api.github.com"]
+  allow_private = []
+
+  [site.limits]
+  max_request_body  = "1MiB"
+  max_output        = "5MiB"
+  request_timeout   = "10s"
+  max_http_calls    = 5
+  max_http_response = "1MiB"
